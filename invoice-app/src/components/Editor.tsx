@@ -15,6 +15,7 @@ import {
 } from "@/lib/storage";
 import { computeTotals, money } from "@/lib/totals";
 import { GST_STATES, validateDoc, type Errors } from "@/lib/validate";
+import { useAccess } from "./Access";
 import { DesignPanel } from "./DesignPanel";
 import { Check, Disclosure, Field, FormCtx, ImageField, Select, setIn } from "./fields";
 import { Preview } from "./Preview";
@@ -152,6 +153,7 @@ function Card({ title, aside, children }: { title: string; aside?: React.ReactNo
 }
 
 export function Editor({ docType: initialType, template }: { docType: DocType; template?: Template }) {
+  const guest = useAccess().role === "guest";
   const [doc, setDoc] = useState<Doc | null>(null);
   const [view, setView] = useState<"edit" | "preview">("edit");
   const [touched, setTouched] = useState<Set<string>>(new Set());
@@ -366,6 +368,7 @@ export function Editor({ docType: initialType, template }: { docType: DocType; t
 
   const save = async () => {
     if (busy) return;
+    if (guest) return notify("Guests can't save. Download your PDF, or sign in as admin.");
     if (Object.keys(errors).length) {
       setShowAll(true); setView("edit"); setOpenAll((k) => k + 1);
       notify("Fix the highlighted fields to save.");
@@ -447,7 +450,7 @@ export function Editor({ docType: initialType, template }: { docType: DocType; t
 
   const actions = (saveLabel: string) => (
     <>
-      <button type="button" className="btn outline" onClick={save} disabled={busy} title="Ctrl or Cmd + S">{saveLabel}</button>
+      {!guest && <button type="button" className="btn outline" onClick={save} disabled={busy} title="Ctrl or Cmd + S">{saveLabel}</button>}
       <button type="button" className="btn primary" onClick={download}>Download PDF</button>
     </>
   );
@@ -505,7 +508,7 @@ export function Editor({ docType: initialType, template }: { docType: DocType; t
                   </div>
                 ) : (
                   <div className="stack-sm">
-                    {!company && <p className="hint">Enter once. <Link href="/company">Set up your company</Link> to add GST, logo, signature and bank details to every new document.</p>}
+                    {guest ? <p className="hint">You&apos;re a guest. This document isn&apos;t saved, so download your PDF before leaving.</p> : !company && <p className="hint">Enter once. <Link href="/company">Set up your company</Link> to add GST, logo, signature and bank details to every new document.</p>}
                     <Field path="business.name" label="Business name" required />
                     {india && <Select path="business.gstType" label="GST registration" options={Object.entries(GST_TYPES)} />}
                     {india && registered ? <Field path="business.gstin" label="GSTIN" upper hint="Fills in your state and PAN." /> : !india && <Field path="business.taxId" label="Tax / VAT ID" />}
@@ -524,7 +527,7 @@ export function Editor({ docType: initialType, template }: { docType: DocType; t
                       </div>
                       <div className="images"><ImageField kind="logo" /><ImageField kind="signature" /><ImageField kind="stamp" /></div>
                     </Disclosure>
-                    {doc.business.name.trim() && (
+                    {doc.business.name.trim() && !guest && (
                       <div className="row">
                         <button type="button" className="btn outline sm" onClick={saveAsCompany}>Use for all new documents</button>
                         {editFrom && <button type="button" className="btn ghost sm" onClick={() => setEditFrom(false)}>Done</button>}
@@ -666,7 +669,7 @@ export function Editor({ docType: initialType, template }: { docType: DocType; t
                   <Field path="footer" label="Footer note" area />
                 </div>
               </Disclosure>
-              <Disclosure title="Templates and privacy">
+              {!guest && <Disclosure title="Templates and privacy">
                 <div className="row">
                   <button type="button" className="btn outline sm" onClick={saveTemplate}>Save as Template</button>
                   {confirmLoad ? <>
@@ -679,9 +682,9 @@ export function Editor({ docType: initialType, template }: { docType: DocType; t
                   <input type="checkbox" checked={recovery} onChange={(e) => { setRecovery(e.target.checked); setRecoveryState(e.target.checked); }} />
                   <span>Remember unfinished {label.toLowerCase()} after closing this browser. Avoid this on a shared device.</span>
                 </label>
-              </Disclosure>
+              </Disclosure>}
             </Card>
-            <p className="hint">* Required to save a document. You can preview and download a draft at any time.</p>
+            <p className="hint">{guest ? "* Required on a finished document. You can preview and download at any time." : "* Required to save a document. You can preview and download a draft at any time."}</p>
           </form>
 
           <aside className="preview-pane" aria-label="Design and preview">

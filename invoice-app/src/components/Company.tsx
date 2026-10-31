@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ACCENTS, TEMPLATES, GST_TYPES, blankCompany, blankDoc, type Company as CompanyData, type Doc, type Settings, type Template } from "@/lib/model";
 import { clearLocalData, loadCompany, numberHead, saveCompany } from "@/lib/storage";
 import { GST_STATES, gstinProblem, stateFromGstin, validateDoc } from "@/lib/validate";
+import { PasscodeFields, useAccess } from "./Access";
 import { Field, FormCtx, ImageField, setIn } from "./fields";
 
 const COUNTRIES = [["", "Not specified"], ["IN", "India"], ["US", "United States"], ["GB", "United Kingdom"], ["CA", "Canada"], ["AU", "Australia"], ["DE", "Germany"]] as const;
@@ -19,6 +20,8 @@ export function Company() {
   const [showAll, setShowAll] = useState(false);
   const [touched, setTouched] = useState<Set<string>>(new Set());
   const [confirmClear, setConfirmClear] = useState(false);
+  const [changing, setChanging] = useState(false);
+  const { signOut } = useAccess();
 
   useEffect(() => {
     let c = blankCompany();
@@ -182,6 +185,18 @@ export function Company() {
           </div>
         </section>
       </form>
+      <div className="settings settings-after">
+        <section className="card">
+          <header className="card-head"><h2>Admin access</h2></header>
+          <p className="hint">Admin sessions end when you close the tab or after 30 minutes without activity. This protects against casual use of a shared browser. It doesn&apos;t encrypt your data, and someone with technical skills could still read it.</p>
+          {changing
+            ? <PasscodeFields submitLabel="Change passcode" onDone={() => { setChanging(false); setMessage("Passcode changed."); }} />
+            : <div className="row">
+                <button type="button" className="btn outline sm" onClick={() => setChanging(true)}>Change passcode</button>
+                <button type="button" className="btn ghost sm" onClick={signOut}>Sign out</button>
+              </div>}
+        </section>
+      </div>
     </FormCtx.Provider>
   );
 }

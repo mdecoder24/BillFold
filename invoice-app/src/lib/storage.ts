@@ -2,6 +2,7 @@ import {
   DOC_TYPES, NUMBER_PREFIX, blankCompany, normalizeCompany, normalizeDoc, normalizeProduct,
   type Company, type Doc, type DocType, type Product,
 } from "./model";
+import type { Role } from "./access";
 
 const K = {
   business: "billfold:business:v1",
@@ -11,6 +12,14 @@ const K = {
   template: (t: DocType) => `billfold:template:${t}:v1`,
   draft: (t: DocType) => `billfold:draft:${t}:v1`,
 };
+
+// Every read and write of saved data passes through this file, so the guest sandbox is enforced here.
+// It starts locked: until a role is set, nothing saved can be read.
+let role: Role = "guest";
+export const setStorageRole = (next: Role) => { role = next; };
+const isAdmin = () => role === "admin";
+const requireAdmin = () => { if (!isAdmin()) throw new Error("Admin access is required."); };
+const guestDraftKey = (t: DocType) => `billfold:guest-draft:${t}:v1`;
 
 const DB = "billfold";
 const STORE = "documents";
@@ -39,19 +48,22 @@ async function withStore<T>(mode: IDBTransactionMode, run: (s: IDBObjectStore) =
 }
 
 export async function listDocs(): Promise<Doc[]> {
+  if (!isAdmin()) return [];
   const rows = await withStore("readonly", (s) => s.getAll());
   return rows.map((r) => normalizeDoc(r)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 export async function getDoc(id: string): Promise<Doc | null> {
+  if (!isAdmin()) return null;
   const row = await withStore("readonly", (s) => s.get(id));
   return row ? normalizeDoc(row) : null;
 }
 export async function putDoc(doc: Doc): Promise<Doc> {
+  requireAdmin();
   const saved = { ...doc, id: doc.id || crypto.randomUUID(), updatedAt: new Date().toISOString() };
   await withStore("readwrite", (s) => s.put(saved));
   return saved;
 }
-export const deleteDoc = (id: string) => withStore("readwrite", (s) => s.delete(id));
+export const deleteDoc = (id: string) => { requireAdmin(); return withStore("readwrite", (s) => s.delete(id)); };
 
 /** The financial year runs April to March, written like 26-27. */
 export function financialYear(iso: string) {
@@ -91,10 +103,11 @@ const readJson = (s: Storage, key: string): unknown => {
 export type Client = Doc["client"] & { id: string };
 
 export function loadCompany(): Company | null {
+  if (!isAdmin()) return null;
   const raw = readJson(localStorage, K.business);
   return raw ? normalizeCompany(raw) : null;
 }
-export const saveCompany = (company: Company) => localStorage.setItem(K.business, JSON.stringify(company));
+export const saveCompany = (company: Company) => { requireAdmin(); localStorage.setItem(K.business, JSON.stringify(company)); };
 
 /** Starts a document from the company's details and defaults. */
 export function applyCompany(doc: Doc, company: Company): Doc {
@@ -113,21 +126,24 @@ const cleanClient = (c: { id?: unknown }): Client => ({
   id: typeof c?.id === "string" ? c.id : crypto.randomUUID(),
 });
 export function loadClients(): Client[] {
+  if (!isAdmin()) return [];
   const raw = readJson(localStorage, K.clients);
   return Array.isArray(raw) ? raw.slice(0, MAX_LIBRARY).map(cleanClient) : [];
 }
-export const saveClients = (clients: Client[]) => localStorage.setItem(K.clients, JSON.stringify(clients));
+export const saveClients = (clients: Client[]) => { requireAdmin(); localStorage.setItem(K.clients, JSON.stringify(clients)); };
 
 export function loadProducts(): Product[] {
+  if (!isAdmin()) return [];
   const raw = readJson(localStorage, K.products);
   return Array.isArray(raw) ? raw.slice(0, MAX_LIBRARY).map(normalizeProduct) : [];
 }
-export const saveProducts = (products: Product[]) => localStorage.setItem(K.products, JSON.stringify(products));
+export const saveProducts = (products: Product[]) => { requireAdmin(); localStorage.setItem(K.products, JSON.stringify(products)); };
 
 const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 /** Saving a document remembers its client and items, so they autocomplete next time. */
 export function rememberFromDoc(doc: Doc) {
+  requireAdmin();
   if (doc.client.organization.trim()) {
     const clients = loadClients();
     const at = clients.findIndex((c) => same(c.organization, doc.client.organization));
@@ -146,8 +162,9 @@ export function rememberFromDoc(doc: Doc) {
   saveProducts(products.slice(0, MAX_LIBRARY));
 }
 
-export const recoveryOn = () => localStorage.getItem(K.recovery) === "true";
+export const recoveryOn = () => isAdmin() && localStorage.getItem(K.recovery) === "true";
 export function setRecovery(on: boolean) {
+  requireAdmin();
   if (on) localStorage.setItem(K.recovery, "true");
   else {
     localStorage.removeItem(K.recovery);
@@ -155,27 +172,32 @@ export function setRecovery(on: boolean) {
   }
 }
 export function writeDraft(doc: Doc) {
+  if (!isAdmin()) { sessionStorage.setItem(guestDraftKey(doc.docType), JSON.stringify(doc)); return; }
   const json = JSON.stringify(doc);
   sessionStorage.setItem(K.draft(doc.docType), json);
   if (recoveryOn()) localStorage.setItem(K.draft(doc.docType), json);
 }
 export function readDraft(type: DocType): Doc | null {
+  if (!isAdmin()) { const own = readJson(sessionStorage, guestDraftKey(type)); return own ? normalizeDoc(own, type) : null; }
   const raw = readJson(sessionStorage, K.draft(type)) ?? (recoveryOn() ? readJson(localStorage, K.draft(type)) : null);
   return raw ? normalizeDoc(raw, type) : null;
 }
 export function clearDraft(type: DocType) {
+  if (!isAdmin()) { sessionStorage.removeItem(guestDraftKey(type)); return; }
   sessionStorage.removeItem(K.draft(type));
   localStorage.removeItem(K.draft(type));
 }
 
-export const writeTemplate = (doc: Doc) => localStorage.setItem(K.template(doc.docType), JSON.stringify(doc));
+export const writeTemplate = (doc: Doc) => { requireAdmin(); localStorage.setItem(K.template(doc.docType), JSON.stringify(doc)); };
 export function readTemplate(type: DocType): Doc | null {
+  if (!isAdmin()) return null;
   const raw = readJson(localStorage, K.template(type));
   return raw ? normalizeDoc(raw, type) : null;
 }
 
 /** Removes the company, clients, products, templates and drafts. Saved documents are kept. */
 export function clearLocalData() {
+  requireAdmin();
   for (const key of [K.business, K.clients, K.products, K.recovery]) localStorage.removeItem(key);
   for (const t of Object.keys(DOC_TYPES) as DocType[]) {
     localStorage.removeItem(K.template(t));
@@ -184,13 +206,36 @@ export function clearLocalData() {
   }
 }
 
+export function clearGuestDrafts() {
+  for (const t of Object.keys(DOC_TYPES) as DocType[]) sessionStorage.removeItem(guestDraftKey(t));
+}
+
+/** The forgotten-passcode route. Erases everything, so it gives no access to existing data. */
+export async function eraseEverything() {
+  for (const key of [K.business, K.clients, K.products, K.recovery]) localStorage.removeItem(key);
+  for (const t of Object.keys(DOC_TYPES) as DocType[]) {
+    localStorage.removeItem(K.template(t));
+    localStorage.removeItem(K.draft(t));
+    sessionStorage.removeItem(K.draft(t));
+    sessionStorage.removeItem(guestDraftKey(t));
+  }
+  await new Promise<void>((resolve, reject) => {
+    const req = indexedDB.deleteDatabase(DB);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+    req.onblocked = () => reject(new Error("Close other Billfold tabs and try again."));
+  });
+}
+
 export async function exportBackup(): Promise<string> {
+  requireAdmin();
   return JSON.stringify({
     app: "billfold", version: 2, exportedAt: new Date().toISOString(), documents: await listDocs(), business: loadCompany(),
     clients: loadClients(), products: loadProducts(), templates: (Object.keys(DOC_TYPES) as DocType[]).map(readTemplate).filter(Boolean),
   }, null, 2);
 }
 export async function importBackup(text: string): Promise<number> {
+  requireAdmin();
   const data = JSON.parse(text) as { app?: unknown; documents?: unknown; business?: unknown; clients?: unknown; products?: unknown; templates?: unknown };
   if (data?.app !== "billfold" || !Array.isArray(data.documents)) throw new Error("This isn't a Billfold backup file.");
   let count = 0;
