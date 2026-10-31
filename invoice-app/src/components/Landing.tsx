@@ -84,9 +84,9 @@ const FEATURES: { title: string; lead: string; items: string[] }[] = [
     title: "Admin and guest access",
     lead: "Keep your saved work private on a shared browser, and still let someone try it.",
     items: [
-      "Admin: full access behind a passcode, signed out after 30 minutes idle",
-      "Guest: create and download documents, with no view of saved data",
-      "Guest work is erased when they leave or close the tab",
+      "Admin: full access behind a username and password, signed out after 30 minutes idle",
+      "Guest: its own sign-in to create and download documents, with no view of saved data",
+      "Guest work is erased on sign-out or when the tab closes",
     ],
   },
   {
@@ -158,7 +158,7 @@ export function Landing() {
           <ul className="land-privacy">
             <li><strong>No account.</strong> Open it and start. There&apos;s nothing to sign up for.</li>
             <li><strong>Back up your work.</strong> Clearing browser data deletes everything, so export a backup file regularly. Your data also won&apos;t follow you to another device unless you restore that file.</li>
-            <li><strong>Mind shared computers.</strong> The admin passcode keeps casual users out, but data is stored unencrypted, so someone with technical skills and access to the browser could still read it.</li>
+            <li><strong>Mind shared computers.</strong> The admin sign-in keeps casual users out, but data is stored unencrypted, so someone with technical skills and access to the browser could still read it.</li>
           </ul>
         </section>
 

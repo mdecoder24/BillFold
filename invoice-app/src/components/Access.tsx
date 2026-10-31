@@ -1,10 +1,9 @@
 "use client";
 import Link from "next/link";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, ShieldCheck, UserRound } from "lucide-react";
 import {
-  IDLE_LIMIT_MS, MIN_PASSCODE, checkPasscode, clearFailures, clearSession, cryptoAvailable, hasPasscode, lockoutSeconds,
-  readSession, recordFailure, removePasscode, setPasscode, writeSession, type Role,
+  IDLE_LIMIT_MS, MIN_PASSWORD, clearFailures, clearSession, cryptoAvailable, hasCustomPassword, lockoutSeconds, readSession,
+  recordFailure, removeCustomPassword, setAdminPassword, signIn, writeSession, type Role,
 } from "@/lib/access";
 import { clearGuestDrafts, eraseEverything, setStorageRole } from "@/lib/storage";
 import { Logo } from "./Logo";
@@ -13,8 +12,9 @@ interface AccessValue { role: Role; signOut: () => void }
 const AccessContext = createContext<AccessValue>({ role: "guest", signOut: () => {} });
 export const useAccess = () => useContext(AccessContext);
 
-function SignInForm({ onAdmin, onForgot }: { onAdmin: () => void; onForgot: () => void }) {
-  const [passcode, setValue] = useState("");
+function SignInForm({ onRole, onForgot }: { onRole: (role: Role) => void; onForgot?: () => void }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [problem, setProblem] = useState("");
   const [busy, setBusy] = useState(false);
   const submit = async (e: React.FormEvent) => {
@@ -25,13 +25,14 @@ function SignInForm({ onAdmin, onForgot }: { onAdmin: () => void; onForgot: () =
     setBusy(true);
     setProblem("");
     try {
-      if (await checkPasscode(passcode)) { clearFailures(); onAdmin(); return; }
+      const role = await signIn(username, password);
+      if (role) { clearFailures(); onRole(role); return; }
       recordFailure();
       const next = lockoutSeconds();
-      setProblem(next ? `That passcode is wrong. Wait ${next} seconds to try again.` : "That passcode is wrong.");
-      setValue("");
+      setProblem(next ? `That username or password is wrong. Wait ${next} seconds to try again.` : "That username or password is wrong.");
+      setPassword("");
     } catch {
-      setProblem("The passcode couldn't be checked in this browser.");
+      setProblem("Your details couldn't be checked in this browser.");
     } finally {
       setBusy(false);
     }
@@ -39,17 +40,21 @@ function SignInForm({ onAdmin, onForgot }: { onAdmin: () => void; onForgot: () =
   return (
     <form className="access-form" onSubmit={submit}>
       <div className="field">
-        <label htmlFor="access-passcode">Admin passcode</label>
-        <input id="access-passcode" type="password" autoComplete="current-password" autoFocus value={passcode} aria-invalid={!!problem || undefined} onChange={(e) => setValue(e.target.value)} />
+        <label htmlFor="access-username">Username</label>
+        <input id="access-username" autoComplete="username" autoCapitalize="none" spellCheck={false} autoFocus value={username} aria-invalid={!!problem || undefined} onChange={(e) => setUsername(e.target.value)} />
+      </div>
+      <div className="field">
+        <label htmlFor="access-password">Password</label>
+        <input id="access-password" type="password" autoComplete="current-password" value={password} aria-invalid={!!problem || undefined} onChange={(e) => setPassword(e.target.value)} />
       </div>
       {problem && <p role="alert" className="err">{problem}</p>}
-      <button type="submit" className="btn primary wide" disabled={busy || !passcode}>{busy ? "Checking…" : "Sign in as admin"}</button>
-      <button type="button" className="access-link" onClick={onForgot}>Forgot your passcode?</button>
+      <button type="submit" className="btn primary wide" disabled={busy || !username.trim() || !password}>{busy ? "Checking…" : "Sign in"}</button>
+      {onForgot && <button type="button" className="access-link" onClick={onForgot}>Forgot the admin password?</button>}
     </form>
   );
 }
 
-export function PasscodeFields({ submitLabel, onDone }: { submitLabel: string; onDone: () => void }) {
+export function PasswordFields({ submitLabel, onDone }: { submitLabel: string; onDone: () => void }) {
   const [first, setFirst] = useState("");
   const [second, setSecond] = useState("");
   const [problem, setProblem] = useState("");
@@ -57,22 +62,22 @@ export function PasscodeFields({ submitLabel, onDone }: { submitLabel: string; o
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (busy) return;
-    if (first.length < MIN_PASSCODE) return setProblem(`Use at least ${MIN_PASSCODE} characters.`);
-    if (first !== second) return setProblem("The two passcodes don't match.");
+    if (first.length < MIN_PASSWORD) return setProblem(`Use at least ${MIN_PASSWORD} characters.`);
+    if (first !== second) return setProblem("The two passwords don't match.");
     setBusy(true);
-    try { await setPasscode(first); onDone(); }
-    catch { setProblem("The passcode couldn't be saved in this browser."); }
+    try { await setAdminPassword(first); onDone(); }
+    catch { setProblem("The password couldn't be saved in this browser."); }
     finally { setBusy(false); }
   };
   return (
     <form className="access-form" onSubmit={submit}>
       <div className="field">
-        <label htmlFor="new-passcode">New passcode</label>
-        <input id="new-passcode" type="password" autoComplete="new-password" value={first} onChange={(e) => setFirst(e.target.value)} />
+        <label htmlFor="new-password">New admin password</label>
+        <input id="new-password" type="password" autoComplete="new-password" value={first} onChange={(e) => setFirst(e.target.value)} />
       </div>
       <div className="field">
-        <label htmlFor="confirm-passcode">Repeat passcode</label>
-        <input id="confirm-passcode" type="password" autoComplete="new-password" value={second} onChange={(e) => setSecond(e.target.value)} />
+        <label htmlFor="confirm-password">Repeat password</label>
+        <input id="confirm-password" type="password" autoComplete="new-password" value={second} onChange={(e) => setSecond(e.target.value)} />
       </div>
       {problem && <p role="alert" className="err">{problem}</p>}
       <button type="submit" className="btn primary wide" disabled={busy}>{busy ? "Saving…" : submitLabel}</button>
@@ -85,7 +90,7 @@ function ForgotForm({ onBack, onErased }: { onBack: () => void; onErased: () => 
   const [problem, setProblem] = useState("");
   return (
     <div className="access-form">
-      <p className="small">A passcode can&apos;t be recovered. The only way back in is to erase all Billfold data in this browser: documents, clients, products, company details and templates.</p>
+      <p className="small">A changed password can&apos;t be recovered. The only way back in is to erase all Billfold data in this browser: documents, clients, products, company details and templates.</p>
       <p className="small"><strong>This can&apos;t be undone.</strong> You can restore a backup file afterwards if you have one.</p>
       <div className="field">
         <label htmlFor="erase-confirm">Type ERASE to confirm</label>
@@ -93,7 +98,7 @@ function ForgotForm({ onBack, onErased }: { onBack: () => void; onErased: () => 
       </div>
       {problem && <p role="alert" className="err">{problem}</p>}
       <button type="button" className="btn danger wide" disabled={typed !== "ERASE"} onClick={async () => {
-        try { await eraseEverything(); removePasscode(); clearSession(); onErased(); }
+        try { await eraseEverything(); removeCustomPassword(); clearSession(); onErased(); }
         catch { setProblem("The data couldn't be erased. Close other Billfold tabs and try again."); }
       }}>Erase everything</button>
       <button type="button" className="access-link" onClick={onBack}>Back to sign in</button>
@@ -102,44 +107,29 @@ function ForgotForm({ onBack, onErased }: { onBack: () => void; onErased: () => 
 }
 
 function AccessScreen({ onRole, notice }: { onRole: (role: Role) => void; notice: string }) {
-  const [mode, setMode] = useState<"auto" | "forgot">("auto");
-  const [exists, setExists] = useState(true);
-  useEffect(() => { setExists(hasPasscode()); }, [mode]);
-  const secure = cryptoAvailable();
+  const [forgot, setForgot] = useState(false);
+  const [custom, setCustom] = useState(false);
+  useEffect(() => { setCustom(hasCustomPassword()); }, [forgot]);
   return (
     <main className="access" id="main">
       <Link href="/" className="brand access-brand" aria-label="Billfold home"><Logo /></Link>
-      <h1>How do you want to continue?</h1>
-      {notice && <p role="status" className="access-notice">{notice}</p>}
-      <div className="access-grid">
-        <section className="card">
-          <header className="access-head"><ShieldCheck size={20} aria-hidden /><h2>Admin</h2></header>
-          <p className="small muted">Full access: save documents, and manage clients, products and company details.</p>
-          {!secure ? (
-            <p role="alert" className="err">Admin access needs a secure connection. Open this site over HTTPS or on localhost.</p>
-          ) : mode === "forgot" ? (
-            <ForgotForm onBack={() => setMode("auto")} onErased={() => setMode("auto")} />
-          ) : exists ? (
-            <SignInForm onAdmin={() => onRole("admin")} onForgot={() => setMode("forgot")} />
-          ) : (
-            <>
-              <p className="small"><strong>First time here.</strong> Create the passcode for this browser. Anything already saved here becomes admin-only.</p>
-              <PasscodeFields submitLabel="Create passcode and sign in" onDone={() => onRole("admin")} />
-            </>
-          )}
-        </section>
-        <section className="card">
-          <header className="access-head"><UserRound size={20} aria-hidden /><h2>Guest</h2></header>
-          <p className="small muted">Try it with no passcode. Create a document, preview it and download the PDF.</p>
-          <ul className="access-list small">
-            <li>Can&apos;t see anything saved in this browser</li>
-            <li>Can&apos;t save documents, clients or products</li>
-            <li>Your work is erased when you leave guest mode or close the tab</li>
-          </ul>
-          <button type="button" className="btn outline wide" onClick={() => onRole("guest")}>Continue as guest <ArrowRight size={16} aria-hidden /></button>
-        </section>
-      </div>
-      <p className="hint access-foot">This controls access on this device only. It isn&apos;t a substitute for an online account: someone with technical skills and access to this browser could still read its unencrypted data.</p>
+      <section className="card access-card">
+        <h1>{forgot ? "Reset admin access" : "Sign in to Billfold"}</h1>
+        {notice && <p role="status" className="access-notice">{notice}</p>}
+        {!cryptoAvailable() ? (
+          <p role="alert" className="err">Sign-in needs a secure connection. Open this site over HTTPS or on localhost.</p>
+        ) : forgot ? (
+          <ForgotForm onBack={() => setForgot(false)} onErased={() => setForgot(false)} />
+        ) : (
+          <SignInForm onRole={onRole} onForgot={custom ? () => setForgot(true) : undefined} />
+        )}
+        {!forgot && (
+          <dl className="access-roles small">
+            <div><dt>Admin</dt><dd>Full access to saved documents, clients, products and company details.</dd></div>
+            <div><dt>Guest</dt><dd>Create and download documents. Nothing is saved, and saved data stays hidden.</dd></div>
+          </dl>
+        )}
+      </section>
     </main>
   );
 }

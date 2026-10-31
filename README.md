@@ -1,10 +1,10 @@
 <p align="center">
-  <img src="public/brand/billfold-logo.png" alt="Billfold" width="240">
+  <img src="invoice-app/public/brand/billfold-logo.png" alt="Billfold" width="240">
 </p>
 
 <p align="center">A GST invoice generator that runs entirely in your browser.<br>No account, no server and no watermark.</p>
 
-![The Billfold invoice editor, with the form on the left and a live PDF preview on the right](public/landing/editor.jpg)
+![The Billfold invoice editor, with the form on the left and a live PDF preview on the right](invoice-app/public/landing/editor.jpg)
 
 ## Contents
 
@@ -17,6 +17,7 @@
 - [Configuration and branding](#configuration-and-branding)
 - [Testing](#testing)
 - [Deployment](#deployment)
+- [Admin and guest access](#admin-and-guest-access)
 - [Security and privacy](#security-and-privacy)
 - [Known limitations](#known-limitations)
 - [Troubleshooting](#troubleshooting)
@@ -45,7 +46,7 @@ Open <http://localhost:3000>. If that port is taken, the terminal shows the port
 - `/` is the landing page.
 - `/invoice` opens the portal.
 
-Start at **Company** to enter your GST details, logo and bank details once. Every new document then picks them up.
+Every portal page asks you to sign in first. Get the admin and guest details from the project owner. As admin, start at **Company** to enter your GST details, logo and bank details once. Every new document then picks them up.
 
 ### Commands
 
@@ -173,6 +174,10 @@ sequenceDiagram
 | Document templates | localStorage | `billfold:template:<type>:v1` |
 | Drafts | sessionStorage, plus localStorage if you opt in | `billfold:draft:<type>:v1` |
 | Draft recovery setting | localStorage | `billfold:recovery` |
+| Changed admin password hash | localStorage | `billfold:access:v1` |
+| Failed sign-in count | localStorage | `billfold:access-attempts` |
+| Current role | sessionStorage | `billfold:session` |
+| Guest drafts | sessionStorage | `billfold:guest-draft:<type>:v1` |
 
 ### Tax calculation
 
@@ -214,7 +219,8 @@ invoice-app/
 │   │   ├── Documents.tsx     Totals, filters, list, export, backup
 │   │   ├── Library.tsx       Clients and products
 │   │   ├── Calculators.tsx   Calculators
-│   │   ├── Shell.tsx         App sidebar and mobile menu
+│   │   ├── Shell.tsx         App sidebar, mobile menu and admin-only routes
+│   │   ├── Access.tsx        Sign-in screen, roles and idle sign-out
 │   │   ├── Landing.tsx       Landing page content
 │   │   ├── Stage.tsx         3D showcase text and fallback
 │   │   └── Logo.tsx          Logo mark and wordmark
@@ -223,7 +229,8 @@ invoice-app/
 │       ├── totals.ts         Tax, totals, money, amount in words
 │       ├── validate.ts       GSTIN and field validation, state list
 │       ├── pdf.ts            The PDF builder and five templates
-│       ├── storage.ts        Browser storage, numbering, backup, images
+│       ├── access.ts         Password hashes, attempts and sessions
+│       ├── storage.ts        Browser storage, guest sandbox, numbering, backup
 │       ├── share.ts          WhatsApp, email, reminders, CSV, overdue check
 │       ├── sample.ts         Sample data for previews and thumbnails
 │       ├── scene.ts          three.js landing scene
@@ -252,9 +259,9 @@ invoice-app/
 | `/quotation`, `/estimate`, `/project-estimate` | Quotes |
 | `/receipt`, `/proforma-invoice`, `/purchase-order` | Other documents |
 | `/credit-note`, `/debit-note`, `/delivery-challan` | Adjustments and goods movement |
-| `/documents` | Saved documents and totals |
-| `/clients`, `/products` | Saved lists |
-| `/company` | Company settings |
+| `/documents` | Saved documents and totals (admin only) |
+| `/clients`, `/products` | Saved lists (admin only) |
+| `/company` | Company settings and admin password (admin only) |
 | `/calculators` | Calculators |
 
 Editor pages also accept `?id=<id>` to open a saved document, `?from=<id>` to start from a copy, and `?client=<id>` to preselect a client.
@@ -278,13 +285,15 @@ If you upgrade `pdfjs-dist`, copy its matching worker to `public/pdf/pdf.worker.
 
 ## Testing
 
+Two tests of the built-in admin account are skipped unless you pass its password with `BILLFOLD_ADMIN_PASSWORD=... npm test`. The repository is public, so don't commit that password.
+
 ```bash
 npm test
 npm run typecheck
 npm audit --omit=dev
 ```
 
-The unit tests in `src/lib/core.test.ts` cover tax calculation, rounding, amount in words, GSTIN and field validation, untrusted data handling, numbering, CSV formula protection, WhatsApp links and overdue logic.
+The unit tests in `src/lib/core.test.ts` and `src/lib/access.test.ts` cover sign-in, the guest sandbox, tax calculation, rounding, amount in words, GSTIN and field validation, untrusted data handling, numbering, CSV formula protection, WhatsApp links and overdue logic.
 
 > [!NOTE]
 > The browser tests used during development aren't in this repository. Only the unit tests run here, so check screens and PDFs by hand after changing them. `playwright-core` is still listed as a dev dependency for adding browser tests.
@@ -293,19 +302,44 @@ The unit tests in `src/lib/core.test.ts` cover tax calculation, rounding, amount
 
 `npm run build` produces a plain static site in `out/`, which any static host can serve.
 
-**Vercel:** import the project. `vercel.json` applies the security headers automatically.
+**Netlify:** connect the repository. `netlify.toml` at the repository root sets the build and security headers.
+
+**Vercel:** import `invoice-app` as the project. `vercel.json` applies the security headers automatically.
 
 **Other hosts:** upload `out/`, and do both of the following:
 
-1. Copy the headers from `vercel.json` into your host's configuration. They don't apply anywhere else.
+1. Copy the headers from `vercel.json` into your host's configuration. They don't apply on other hosts automatically.
 2. Make sure clean URLs work, so `/invoice` serves `invoice.html`.
 
 Use HTTPS. The share sheet requires it, and it protects your visitors.
 
+## Admin and guest access
+
+The landing page is public. Every other page shows a sign-in screen, where the username decides the role.
+
+| | Admin | Guest |
+| --- | --- | --- |
+| Create, preview and download documents | Yes | Yes |
+| Calculators | Yes | Yes |
+| Save documents and templates | Yes | No |
+| See saved documents, clients, products and company details | Yes | No |
+| Work kept after signing out | Yes, when saved | No, erased on sign-out or when the tab closes |
+
+**How it works**
+
+- `src/lib/access.ts` holds the sign-in logic. The built-in accounts are stored as salted PBKDF2-SHA256 hashes with 600,000 iterations, so the passwords don't appear in the source. Repeated wrong tries add a wait of up to five minutes.
+- To change a built-in password for every browser, generate a new salt and hash, then replace the values in `BUILT_IN`.
+- As admin, **Company → Change password** replaces the admin password in that browser only. If a changed password is forgotten, the only reset erases all Billfold data in that browser, after you type `ERASE`.
+- Sessions use `sessionStorage`, so each tab signs in separately and closing a tab signs out. Admin sessions also end after 30 minutes idle, and unsaved edits to an already saved document are lost when that happens.
+- `src/lib/storage.ts` enforces the guest sandbox: reads return nothing and writes throw unless the role is admin. Guest drafts use their own keys and can't reach admin drafts.
+
+> [!WARNING]
+> This is sign-in for casual access, not account security. Everything runs in the browser, so the password hashes ship in the public JavaScript, and a weak password can be guessed from its hash. Someone with developer tools can also skip the sign-in. Data isn't encrypted, and it isn't shared: each browser keeps its own. Real logins need a backend with server-side authentication.
+
 ## Security and privacy
 
 - **No upload:** documents, clients and company details aren't sent to any server. Pressing WhatsApp or email opens that service with a short message containing the client name, document number and amount, and your UPI ID if you've set one. The PDF is never sent automatically.
-- **Unencrypted storage:** data is stored unencrypted in the browser, so anyone using the same browser profile can read it. Avoid shared computers, and leave draft recovery off on them.
+- **Unencrypted storage:** data is stored unencrypted in the browser. The admin sign-in only stops casual access, so don't rely on it on shared computers, and leave draft recovery off on them.
 - **Data loss:** clearing browser data deletes everything. Use **Documents → Data → Back up everything** regularly. Backup files contain your business and client details, so store them carefully.
 - **Untrusted data:** stored data and backup files are rebuilt with known fields, types and allowed values. Images must be PNG or JPEG data URLs within a size limit.
 - **CSV exports:** cells that a spreadsheet would run as formulas are neutralized.
@@ -334,6 +368,8 @@ Use HTTPS. The share sheet requires it, and it protects your visitors.
 | Saved data is missing | Data belongs to one browser and one address, so `localhost:3000` and `localhost:3001` have separate data. Restore a backup if you need it elsewhere |
 | The preview says "Document fonts could not load" | Check that `public/fonts/` exists and retry |
 | WhatsApp or print doesn't open | Allow pop-ups for the site |
+| Sign-in says it needs a secure connection | The check needs HTTPS or localhost. A plain `http://192.168...` address won't work |
+| Forgot a changed admin password | It can't be recovered. Choose **Forgot the admin password?** to erase this browser's data, then restore a backup |
 | The 3D scene doesn't appear | The device lacks WebGL or has reduced motion turned on. The plain page is expected in those cases |
 
 ## Credits and licence

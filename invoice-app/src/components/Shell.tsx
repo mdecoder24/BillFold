@@ -62,8 +62,8 @@ function Portal({ children }: { children: React.ReactNode }) {
               {guest ? <UserRound size={16} aria-hidden /> : <ShieldCheck size={16} aria-hidden />}
               <span className="nav-label">{guest ? "Guest" : "Admin"}</span>
             </span>
-            <button type="button" className="nav-link side-out" title={guest ? "Leave guest mode" : "Sign out"} aria-label={guest ? "Leave guest mode" : "Sign out"} onClick={signOut}>
-              <LogOut size={18} aria-hidden /><span className="nav-label">{guest ? "Leave guest mode" : "Sign out"}</span>
+            <button type="button" className="nav-link side-out" title={"Sign out"} aria-label="Sign out" onClick={signOut}>
+              <LogOut size={18} aria-hidden /><span className="nav-label">Sign out</span>
             </button>
           </div>
         </nav>

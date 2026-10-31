@@ -210,7 +210,7 @@ export function clearGuestDrafts() {
   for (const t of Object.keys(DOC_TYPES) as DocType[]) sessionStorage.removeItem(guestDraftKey(t));
 }
 
-/** The forgotten-passcode route. Erases everything, so it gives no access to existing data. */
+/** The forgotten-password route. Erases everything, so it gives no access to existing data. */
 export async function eraseEverything() {
   for (const key of [K.business, K.clients, K.products, K.recovery]) localStorage.removeItem(key);
   for (const t of Object.keys(DOC_TYPES) as DocType[]) {

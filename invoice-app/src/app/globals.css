@@ -356,19 +356,17 @@ input[type="file"] { font-size: 12.5px; max-width: 100%; }
 }
 
 /* Access screen */
-.access { min-height: 100dvh; max-width: 860px; margin: 0 auto; padding: clamp(24px, 6vh, 64px) 20px 32px; display: grid; gap: 16px; align-content: start; }
+.access { min-height: 100dvh; max-width: 420px; margin: 0 auto; padding: clamp(24px, 8vh, 80px) 20px 32px; display: grid; gap: 18px; align-content: start; }
 .access-brand { justify-self: start; }
 .access .brand-name { display: inline; }
-.access h1 { margin-top: 8px; }
+.access h1 { font-size: 1.35rem; }
+.access-card { gap: 16px; }
 .access-notice { padding: 9px 12px; border-radius: 8px; background: var(--accent-soft); font-size: 13.5px; }
-.access-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 14px; align-items: stretch; }
-.access-head { display: flex; align-items: center; gap: 8px; color: var(--accent); }
-.access-head h2 { color: var(--ink); font-size: 1.05rem; }
 .access-form { display: grid; gap: 10px; }
 .access-link { justify-self: center; border: 0; background: none; color: var(--muted); font: inherit; font-size: 13px; text-decoration: underline; cursor: pointer; }
-.access-list { margin: 0; padding-left: 18px; display: grid; gap: 4px; color: var(--muted); align-content: start; }
-.access-grid .card > .btn { align-self: end; }
-.access-foot { max-width: 68ch; }
+.access-roles { margin: 0; padding-top: 12px; border-top: 1px solid var(--line); display: grid; gap: 8px; }
+.access-roles dt { font-weight: 600; }
+.access-roles dd { margin: 0; color: var(--muted); }
 .side-account { margin-top: auto; display: grid; gap: 2px; width: 100%; }
 .side-account .side-note { margin-top: 0; }
 .role-badge { display: flex; align-items: center; gap: 10px; min-height: 30px; padding: 0 10px; color: var(--accent); font-size: 13px; font-weight: 600; }

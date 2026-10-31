@@ -14,31 +14,44 @@ beforeEach(() => {
 const access = () => import("./access");
 const storage = () => import("./storage");
 
-describe("passcode", () => {
-  it("stores only a salted hash and verifies correctly", async () => {
+// The repository is public, so the admin password is never written here. Pass it in to test it:
+// BILLFOLD_ADMIN_PASSWORD=... npm test
+const builtIn = process.env.BILLFOLD_ADMIN_PASSWORD;
+
+describe("sign-in", () => {
+  it.skipIf(!builtIn)("accepts the built-in admin account", async () => {
     const a = await access();
-    await a.setPasscode("correct horse");
-    const raw = localStorage.getItem("billfold:access:v1")!;
-    expect(raw).not.toContain("correct horse");
-    expect(JSON.parse(raw).iterations).toBe(600000);
-    expect(await a.checkPasscode("correct horse")).toBe(true);
-    expect(await a.checkPasscode("wrong horse")).toBe(false);
+    expect(await a.signIn("admin", builtIn!)).toBe("admin");
+    expect(await a.signIn(" Admin ", builtIn!)).toBe("admin");
+    expect(await a.signIn("admin", builtIn!.toUpperCase())).toBeNull();
+    expect(await a.signIn("guest", builtIn!)).toBeNull();
+    expect(await a.signIn("root", builtIn!)).toBeNull();
   });
-  it("uses a different hash each time", async () => {
+  it("accepts the guest account", async () => {
+    expect(await (await access()).signIn("guest", "guest")).toBe("guest");
+  });
+  it("refuses wrong details and mixed-up accounts", async () => {
     const a = await access();
-    await a.setPasscode("same passcode");
-    const first = localStorage.getItem("billfold:access:v1");
-    await a.setPasscode("same passcode");
-    expect(localStorage.getItem("billfold:access:v1")).not.toBe(first);
+    expect(await a.signIn("admin", "wrong")).toBeNull();
+    expect(await a.signIn("admin", "guest")).toBeNull();
+    expect(await a.signIn("", "")).toBeNull();
   });
-  it("rejects a short passcode", async () => {
-    await expect((await access()).setPasscode("short")).rejects.toThrow(/at least 8/);
-  });
-  it("a corrupted record blocks sign-in and doesn't reopen setup", async () => {
+  it("a changed password replaces the built-in one", async () => {
     const a = await access();
+    await a.setAdminPassword("a much longer one");
+    expect(localStorage.getItem("billfold:access:v1")).not.toContain("a much longer one");
+    expect(await a.signIn("admin", "a much longer one")).toBe("admin");
+    expect(await a.signIn("guest", "guest")).toBe("guest");
+  });
+  it.skipIf(!builtIn)("a changed or corrupted password shuts out the built-in one", async () => {
+    const a = await access();
+    await a.setAdminPassword("a much longer one");
+    expect(await a.signIn("admin", builtIn!)).toBeNull();
     localStorage.setItem("billfold:access:v1", "{broken");
-    expect(a.hasPasscode()).toBe(true);
-    expect(await a.checkPasscode("anything at all")).toBe(false);
+    expect(await a.signIn("admin", builtIn!)).toBeNull();
+  });
+  it("rejects a short new password", async () => {
+    await expect((await access()).setAdminPassword("short")).rejects.toThrow(/at least 8/);
   });
   it("waits longer after repeated failures", async () => {
     const a = await access();
@@ -49,12 +62,10 @@ describe("passcode", () => {
     for (let i = 0; i < 20; i++) a.recordFailure();
     expect(a.lockoutSeconds()).toBeLessThanOrEqual(300);
   });
-  it("an admin session needs a passcode to exist", async () => {
+  it("ignores an unknown session value", async () => {
     const a = await access();
-    a.writeSession("admin");
+    sessionStorage.setItem("billfold:session", "root");
     expect(a.readSession()).toBeNull();
-    await a.setPasscode("correct horse");
-    expect(a.readSession()).toBe("admin");
   });
 });
 
