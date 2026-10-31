@@ -85,7 +85,7 @@ const FEATURES: { title: string; lead: string; items: string[] }[] = [
     lead: "Keep your saved work private on a shared browser, and still let someone try it.",
     items: [
       "Admin: full access behind a username and password, signed out after 30 minutes idle",
-      "Guest: its own sign-in to create and download documents, with no view of saved data",
+      "Guest: no sign-in needed to create and download documents, with no view of saved data",
       "Guest work is erased on sign-out or when the tab closes",
     ],
   },

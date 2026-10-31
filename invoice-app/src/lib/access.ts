@@ -2,7 +2,9 @@
 // The hashes below ship in the public JavaScript, and a weak password can be guessed from its hash.
 export type Role = "admin" | "guest";
 
-const CUSTOM_ADMIN = "billfold:access:v1";
+const CUSTOM_ADMIN = "billfold:admin-password:v2";
+// Left by the earlier first-visit passcode setup. It must not override the admin password.
+const LEGACY_PASSCODE = "billfold:access:v1";
 const SESSION = "billfold:session";
 const ATTEMPTS = "billfold:access-attempts";
 const ITERATIONS = 600_000;
@@ -11,10 +13,7 @@ export const IDLE_LIMIT_MS = 30 * 60_000;
 
 interface Credential { salt: string; hash: string; iterations: number }
 
-const BUILT_IN: Record<Role, Credential> = {
-  admin: { salt: "118a7e1288314c72c55ff48bfc429c04", hash: "eb92873cab1d81893b899b907ce955072e2cf0ce50441854377ad3770b3508f1", iterations: ITERATIONS },
-  guest: { salt: "a3720678b11a3f63be4150ad5573e422", hash: "0add7105b43d4b48247e084c8df4c1df208bcbf885236adbf2d8e3b34b63e048", iterations: ITERATIONS },
-};
+const BUILT_IN_ADMIN: Credential = { salt: "6237dafd989bbe79bbc7a8672eb186e9", hash: "50f8899d40101e0bbc502654a2e7dd03d1d9b52b1672f68ad1b92ececbc80b53", iterations: ITERATIONS };
 
 const toHex = (bytes: Uint8Array) => [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
 const fromHex = (hex: string) => new Uint8Array((hex.match(/../g) ?? []).map((h) => parseInt(h, 16)));
@@ -45,17 +44,16 @@ function customAdmin(): Credential | null {
   return null;
 }
 
-/** Returns the role for a correct username and password, otherwise null. */
-export async function signIn(username: string, password: string): Promise<Role | null> {
-  const name = username.trim().toLowerCase();
-  if (name === "guest") return (await matches(password, BUILT_IN.guest)) ? "guest" : null;
-  if (name !== "admin") return null;
+/** Checks the admin sign-in. Guests need no details, so they never come through here. */
+export async function signInAdmin(username: string, password: string): Promise<boolean> {
+  localStorage.removeItem(LEGACY_PASSCODE);
+  if (username.trim().toLowerCase() !== "admin") return false;
   // An unreadable custom password refuses sign-in, so corrupting it can't restore the built-in one.
   if (hasCustomPassword()) {
     const custom = customAdmin();
-    return custom && (await matches(password, custom)) ? "admin" : null;
+    return !!custom && matches(password, custom);
   }
-  return (await matches(password, BUILT_IN.admin)) ? "admin" : null;
+  return matches(password, BUILT_IN_ADMIN);
 }
 
 export async function setAdminPassword(password: string) {

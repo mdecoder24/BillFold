@@ -46,7 +46,7 @@ Open <http://localhost:3000>. If that port is taken, the terminal shows the port
 - `/` is the landing page.
 - `/invoice` opens the portal.
 
-Every portal page asks you to sign in first. Get the admin and guest details from the project owner. As admin, start at **Company** to enter your GST details, logo and bank details once. Every new document then picks them up.
+Opening the portal offers two options: **Guest** needs no details, and **Admin** needs the username and password from the project owner. As admin, start at **Company** to enter your GST details, logo and bank details once. Every new document then picks them up.
 
 ### Commands
 
@@ -174,7 +174,7 @@ sequenceDiagram
 | Document templates | localStorage | `billfold:template:<type>:v1` |
 | Drafts | sessionStorage, plus localStorage if you opt in | `billfold:draft:<type>:v1` |
 | Draft recovery setting | localStorage | `billfold:recovery` |
-| Changed admin password hash | localStorage | `billfold:access:v1` |
+| Changed admin password hash | localStorage | `billfold:admin-password:v2` |
 | Failed sign-in count | localStorage | `billfold:access-attempts` |
 | Current role | sessionStorage | `billfold:session` |
 | Guest drafts | sessionStorage | `billfold:guest-draft:<type>:v1` |
@@ -285,7 +285,7 @@ If you upgrade `pdfjs-dist`, copy its matching worker to `public/pdf/pdf.worker.
 
 ## Testing
 
-Two tests of the built-in admin account are skipped unless you pass its password with `BILLFOLD_ADMIN_PASSWORD=... npm test`. The repository is public, so don't commit that password.
+Tests of the built-in admin account are skipped unless you pass its password with `BILLFOLD_ADMIN_PASSWORD=... npm test`. The repository is public, so don't commit that password.
 
 ```bash
 npm test
@@ -315,7 +315,7 @@ Use HTTPS. The share sheet requires it, and it protects your visitors.
 
 ## Admin and guest access
 
-The landing page is public. Every other page shows a sign-in screen, where the username decides the role.
+The landing page is public. Every other page first asks you to choose **Admin** or **Guest**. Guest enters straight away, with no username or password.
 
 | | Admin | Guest |
 | --- | --- | --- |
@@ -327,14 +327,14 @@ The landing page is public. Every other page shows a sign-in screen, where the u
 
 **How it works**
 
-- `src/lib/access.ts` holds the sign-in logic. The built-in accounts are stored as salted PBKDF2-SHA256 hashes with 600,000 iterations, so the passwords don't appear in the source. Repeated wrong tries add a wait of up to five minutes.
-- To change a built-in password for every browser, generate a new salt and hash, then replace the values in `BUILT_IN`.
+- `src/lib/access.ts` holds the sign-in logic. The built-in admin password is stored as a salted PBKDF2-SHA256 hash with 600,000 iterations, so it doesn't appear in the source. Repeated wrong tries add a wait of up to five minutes.
+- To change the built-in password for every browser, generate a new salt and hash, then replace the values in `BUILT_IN_ADMIN`.
 - As admin, **Company → Change password** replaces the admin password in that browser only. If a changed password is forgotten, the only reset erases all Billfold data in that browser, after you type `ERASE`.
 - Sessions use `sessionStorage`, so each tab signs in separately and closing a tab signs out. Admin sessions also end after 30 minutes idle, and unsaved edits to an already saved document are lost when that happens.
 - `src/lib/storage.ts` enforces the guest sandbox: reads return nothing and writes throw unless the role is admin. Guest drafts use their own keys and can't reach admin drafts.
 
 > [!WARNING]
-> This is sign-in for casual access, not account security. Everything runs in the browser, so the password hashes ship in the public JavaScript, and a weak password can be guessed from its hash. Someone with developer tools can also skip the sign-in. Data isn't encrypted, and it isn't shared: each browser keeps its own. Real logins need a backend with server-side authentication.
+> This is sign-in for casual access, not account security. Everything runs in the browser, so the password hash ships in the public JavaScript, and a weak password can be guessed from its hash. Someone with developer tools can also skip the sign-in. Data isn't encrypted, and it isn't shared: each browser keeps its own. Real logins need a backend with server-side authentication.
 
 ## Security and privacy
 

@@ -1,9 +1,10 @@
 "use client";
 import Link from "next/link";
+import { ArrowLeft, ArrowRight, ShieldCheck, UserRound } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   IDLE_LIMIT_MS, MIN_PASSWORD, clearFailures, clearSession, cryptoAvailable, hasCustomPassword, lockoutSeconds, readSession,
-  recordFailure, removeCustomPassword, setAdminPassword, signIn, writeSession, type Role,
+  recordFailure, removeCustomPassword, setAdminPassword, signInAdmin, writeSession, type Role,
 } from "@/lib/access";
 import { clearGuestDrafts, eraseEverything, setStorageRole } from "@/lib/storage";
 import { Logo } from "./Logo";
@@ -12,7 +13,7 @@ interface AccessValue { role: Role; signOut: () => void }
 const AccessContext = createContext<AccessValue>({ role: "guest", signOut: () => {} });
 export const useAccess = () => useContext(AccessContext);
 
-function SignInForm({ onRole, onForgot }: { onRole: (role: Role) => void; onForgot?: () => void }) {
+function AdminForm({ onAdmin, onForgot }: { onAdmin: () => void; onForgot?: () => void }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [problem, setProblem] = useState("");
@@ -25,8 +26,7 @@ function SignInForm({ onRole, onForgot }: { onRole: (role: Role) => void; onForg
     setBusy(true);
     setProblem("");
     try {
-      const role = await signIn(username, password);
-      if (role) { clearFailures(); onRole(role); return; }
+      if (await signInAdmin(username, password)) { clearFailures(); onAdmin(); return; }
       recordFailure();
       const next = lockoutSeconds();
       setProblem(next ? `That username or password is wrong. Wait ${next} seconds to try again.` : "That username or password is wrong.");
@@ -48,7 +48,7 @@ function SignInForm({ onRole, onForgot }: { onRole: (role: Role) => void; onForg
         <input id="access-password" type="password" autoComplete="current-password" value={password} aria-invalid={!!problem || undefined} onChange={(e) => setPassword(e.target.value)} />
       </div>
       {problem && <p role="alert" className="err">{problem}</p>}
-      <button type="submit" className="btn primary wide" disabled={busy || !username.trim() || !password}>{busy ? "Checking…" : "Sign in"}</button>
+      <button type="submit" className="btn primary wide" disabled={busy || !username.trim() || !password}>{busy ? "Checking…" : "Sign in as admin"}</button>
       {onForgot && <button type="button" className="access-link" onClick={onForgot}>Forgot the admin password?</button>}
     </form>
   );
@@ -107,29 +107,44 @@ function ForgotForm({ onBack, onErased }: { onBack: () => void; onErased: () => 
 }
 
 function AccessScreen({ onRole, notice }: { onRole: (role: Role) => void; notice: string }) {
-  const [forgot, setForgot] = useState(false);
+  const [view, setView] = useState<"choose" | "admin" | "forgot">("choose");
   const [custom, setCustom] = useState(false);
-  useEffect(() => { setCustom(hasCustomPassword()); }, [forgot]);
+  useEffect(() => { setCustom(hasCustomPassword()); }, [view]);
   return (
     <main className="access" id="main">
       <Link href="/" className="brand access-brand" aria-label="Billfold home"><Logo /></Link>
-      <section className="card access-card">
-        <h1>{forgot ? "Reset admin access" : "Sign in to Billfold"}</h1>
-        {notice && <p role="status" className="access-notice">{notice}</p>}
-        {!cryptoAvailable() ? (
-          <p role="alert" className="err">Sign-in needs a secure connection. Open this site over HTTPS or on localhost.</p>
-        ) : forgot ? (
-          <ForgotForm onBack={() => setForgot(false)} onErased={() => setForgot(false)} />
-        ) : (
-          <SignInForm onRole={onRole} onForgot={custom ? () => setForgot(true) : undefined} />
-        )}
-        {!forgot && (
-          <dl className="access-roles small">
-            <div><dt>Admin</dt><dd>Full access to saved documents, clients, products and company details.</dd></div>
-            <div><dt>Guest</dt><dd>Create and download documents. Nothing is saved, and saved data stays hidden.</dd></div>
-          </dl>
-        )}
-      </section>
+      {view === "choose" ? (
+        <>
+          <h1>How do you want to continue?</h1>
+          {notice && <p role="status" className="access-notice">{notice}</p>}
+          <div className="access-choices">
+            <button type="button" className="access-choice" onClick={() => setView("admin")}>
+              <ShieldCheck size={22} aria-hidden />
+              <strong>Admin</strong>
+              <span className="small muted">Sign in for full access to saved documents, clients, products and company details.</span>
+              <span className="access-go">Sign in <ArrowRight size={15} aria-hidden /></span>
+            </button>
+            <button type="button" className="access-choice" onClick={() => onRole("guest")}>
+              <UserRound size={22} aria-hidden />
+              <strong>Guest</strong>
+              <span className="small muted">No sign-in needed. Create and download documents. Nothing is saved, and saved data stays hidden.</span>
+              <span className="access-go">Continue as guest <ArrowRight size={15} aria-hidden /></span>
+            </button>
+          </div>
+        </>
+      ) : (
+        <section className="card access-card">
+          <button type="button" className="access-back" onClick={() => setView(view === "forgot" ? "admin" : "choose")}><ArrowLeft size={15} aria-hidden /> Back</button>
+          <h1>{view === "forgot" ? "Reset admin access" : "Admin sign-in"}</h1>
+          {!cryptoAvailable() ? (
+            <p role="alert" className="err">Admin sign-in needs a secure connection. Open this site over HTTPS or on localhost, or continue as a guest.</p>
+          ) : view === "forgot" ? (
+            <ForgotForm onBack={() => setView("admin")} onErased={() => setView("admin")} />
+          ) : (
+            <AdminForm onAdmin={() => onRole("admin")} onForgot={custom ? () => setView("forgot") : undefined} />
+          )}
+        </section>
+      )}
     </main>
   );
 }

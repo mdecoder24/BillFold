@@ -18,37 +18,38 @@ const storage = () => import("./storage");
 // BILLFOLD_ADMIN_PASSWORD=... npm test
 const builtIn = process.env.BILLFOLD_ADMIN_PASSWORD;
 
-describe("sign-in", () => {
+describe("admin sign-in", () => {
   it.skipIf(!builtIn)("accepts the built-in admin account", async () => {
     const a = await access();
-    expect(await a.signIn("admin", builtIn!)).toBe("admin");
-    expect(await a.signIn(" Admin ", builtIn!)).toBe("admin");
-    expect(await a.signIn("admin", builtIn!.toUpperCase())).toBeNull();
-    expect(await a.signIn("guest", builtIn!)).toBeNull();
-    expect(await a.signIn("root", builtIn!)).toBeNull();
+    expect(await a.signInAdmin("admin", builtIn!)).toBe(true);
+    expect(await a.signInAdmin(" Admin ", builtIn!)).toBe(true);
+    expect(await a.signInAdmin("admin", builtIn!.toUpperCase())).toBe(false);
+    expect(await a.signInAdmin("root", builtIn!)).toBe(false);
   });
-  it("accepts the guest account", async () => {
-    expect(await (await access()).signIn("guest", "guest")).toBe("guest");
-  });
-  it("refuses wrong details and mixed-up accounts", async () => {
+  it("refuses wrong details", async () => {
     const a = await access();
-    expect(await a.signIn("admin", "wrong")).toBeNull();
-    expect(await a.signIn("admin", "guest")).toBeNull();
-    expect(await a.signIn("", "")).toBeNull();
+    expect(await a.signInAdmin("admin", "wrong")).toBe(false);
+    expect(await a.signInAdmin("guest", "guest")).toBe(false);
+    expect(await a.signInAdmin("", "")).toBe(false);
   });
-  it("a changed password replaces the built-in one", async () => {
+  it.skipIf(!builtIn)("an old first-visit passcode doesn't override the admin password", async () => {
+    const a = await access();
+    localStorage.setItem("billfold:access:v1", JSON.stringify({ salt: "00", hash: "00", iterations: 1 }));
+    expect(await a.signInAdmin("admin", builtIn!)).toBe(true);
+    expect(localStorage.getItem("billfold:access:v1")).toBeNull();
+  });
+  it("a changed password works and is stored only as a hash", async () => {
     const a = await access();
     await a.setAdminPassword("a much longer one");
-    expect(localStorage.getItem("billfold:access:v1")).not.toContain("a much longer one");
-    expect(await a.signIn("admin", "a much longer one")).toBe("admin");
-    expect(await a.signIn("guest", "guest")).toBe("guest");
+    expect(JSON.stringify(localStorage)).not.toContain("a much longer one");
+    expect(await a.signInAdmin("admin", "a much longer one")).toBe(true);
   });
   it.skipIf(!builtIn)("a changed or corrupted password shuts out the built-in one", async () => {
     const a = await access();
     await a.setAdminPassword("a much longer one");
-    expect(await a.signIn("admin", builtIn!)).toBeNull();
-    localStorage.setItem("billfold:access:v1", "{broken");
-    expect(await a.signIn("admin", builtIn!)).toBeNull();
+    expect(await a.signInAdmin("admin", builtIn!)).toBe(false);
+    localStorage.setItem("billfold:admin-password:v2", "{broken");
+    expect(await a.signInAdmin("admin", builtIn!)).toBe(false);
   });
   it("rejects a short new password", async () => {
     await expect((await access()).setAdminPassword("short")).rejects.toThrow(/at least 8/);
